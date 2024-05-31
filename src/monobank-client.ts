@@ -1,7 +1,8 @@
 import express, {Request, Response} from 'express'
 import axios from "axios";
 import Payment, {IPayment} from "./models/Payment";
-const Currencies = require('currencies.json')
+import TelegramService from "./telegram-service";
+const Currencies = require('../currencies.json')
 
 class MonobankClient {
     private readonly baseUrl = 'https://api.monobank.ua'
@@ -11,14 +12,11 @@ class MonobankClient {
         app.use(express.json())
 
         app.get('/', (req: Request, res: Response) => {
-            console.log('webhook check')
             res.status(200).json({})
         })
 
         app.post('/:userId', async (req: Request, res: Response) => {
             try {
-                console.log('webhook data')
-                console.log(req.body);
                 // {
                 //   type: 'StatementItem',
                 //   data: {
@@ -75,6 +73,7 @@ class MonobankClient {
                     rawData: JSON.stringify(data),
                 }
                 await Payment.create(paymentObject);
+                await TelegramService.handleNewPayment(paymentObject);
             } catch (e) {
                 console.log(e);
             }
