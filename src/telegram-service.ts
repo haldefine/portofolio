@@ -1,62 +1,148 @@
-import {IPayment} from "./models/Payment";
+import Payment, {IPayment} from "./models/Payment";
 import User, {IUser} from "./models/User";
-import {Api, Bot, Context, Keyboard, NextFunction, session} from "grammy";
+import {Api, Bot, Context, InlineKeyboard, Keyboard, NextFunction, session} from "grammy";
 import {Menu} from "@grammyjs/menu";
-import {Conversation, ConversationFlavor, conversations} from "@grammyjs/conversations";
+import {
+    Conversation,
+    ConversationFlavor,
+    conversations,
+    createConversation
+} from "@grammyjs/conversations";
+import {StatelessQuestion} from '@grammyjs/stateless-question';
 
-type MyContext = Context & ConversationFlavor & {user: IUser};
+type MyContext = Context & ConversationFlavor & {user: IUser&{_id: string}};
 type MyConversation = Conversation<MyContext>;
 
 class TelegramService {
     private bot: Bot<MyContext, Api>;
-    private startMenu: Menu;
+    private startMenu: Menu<MyContext>;
+    private chooseCategoryQuestion: StatelessQuestion<MyContext>;
 
     constructor() {
         this.bot = new Bot(process.env.BOT_TOKEN as string);
-        this.bot.use(async (ctx: MyContext, next: NextFunction) => {
-            if (!ctx.from || !ctx.from.id) throw new Error('from is undefined')
-            let user = await User.findOne({t_id: ctx.from.id});
-            if (!user) {
-                const userObject: IUser = {
-                    t_id: ctx.from.id,
-                    categories: [],
-                }
-                user = await User.create(userObject)
-            }
-            ctx.user = user;
-            next();
-        })
-        this.bot.use(session());
+        this.bot.use(this.dbMiddleware)
+        this.bot.use(session({ initial: () => ({}) }));
         this.bot.use(conversations());
 
-        this.startMenu = new Menu("start-menu")
-            .text("Add category", (ctx) => ctx.reply("You pressed A!"))
-            .text("Remove category", async (ctx) => {
-                const user = await User.findOne({t_id: ctx.from.id})
-                if (!user) throw new Error("User not found");
-                const keyboard = Keyboard.from(user.categories.length ? user.categories.map((c) => [c]) : [["Nothing"]]).resized()
-                await ctx.reply('Choose category to delete', {reply_markup: keyboard})
-            })
-            .text("Edit category", (ctx) => ctx.reply("You pressed B!")).row()
-            .text('Statistic', (ctx) => ctx.reply("Statistic")).row()
-        this.bot.use(this.startMenu);
+        this.bot.use(createConversation(this.removeCategory))
+        this.bot.use(createConversation(this.addCategory))
+        this.bot.use(createConversation(this.editCategory))
 
-        this.bot.command('start', this.startCommand.bind(this));
+        this.startMenu = new Menu<MyContext>("start-menu")
+            .text("Add category", async (ctx) => await ctx.conversation.enter('addCategory')).row()
+            .text("Remove category", async (ctx) => await ctx.conversation.enter('removeCategory')).row()
+            .text("Edit category", async (ctx) => await ctx.conversation.enter('editCategory')).row()
+            .text('Statistic', this.sendStatistic)
+        this.bot.use(this.startMenu);
+        this.bot.command('start', async (ctx) =>
+            await ctx.reply('Hi', {reply_markup: this.startMenu})
+        );
+        this.chooseCategoryQuestion = new StatelessQuestion('categoryQuestion', (ctx, paymentId) => {
+            console.log('User thinks unicorns are doing:', ctx, paymentId)
+        })
+        this.bot.use(this.chooseCategoryQuestion.middleware());
+
         this.bot.start();
     }
 
-    async handleNewPayment(payment: IPayment) {
+    async handleNewPayment(payment: IPayment&{id?: string}) {
         const user = await User.findById(payment.user);
         if (!user) throw new Error("User does not exist");
         if (payment.amount <= 0) {
-            await this.bot.api.sendMessage(user.t_id, `Еее ты шо охуел деньги тратить\nПотрачено: ${-payment.amount}${payment.currency} на ${payment.description}`)
+            const keyboard = InlineKeyboard.from([user.categories.map((c) => InlineKeyboard.text(c, c))])
+            await this.bot.api.sendMessage(user.t_id, `Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`+this.chooseCategoryQuestion.messageSuffixMarkdown(payment.id), {reply_markup: keyboard, parse_mode: 'Markdown'})
+
         } else {
-            await this.bot.api.sendMessage(user.t_id, `Опппааа краасавчиик, денюжка пришла\nПришло: ${payment.amount}${payment.currency} от ${payment.description}`)
+            await this.bot.api.sendMessage(user.t_id, `Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`)
         }
     }
 
-    private async startCommand(ctx: MyContext) {
-        await ctx.reply('Hi', {reply_markup: this.startMenu})
+    async dbMiddleware(ctx: MyContext, next: NextFunction) {
+        if (!ctx.from || !ctx.from.id) throw new Error('from is undefined')
+        let user = await User.findOne({t_id: ctx.from.id});
+        if (!user) {
+            const userObject: IUser = {
+                t_id: ctx.from.id,
+                categories: [],
+            }
+            user = await User.create(userObject)
+        }
+        ctx.user = JSON.parse(JSON.stringify(user));
+        // ctx.user = user;
+        next();
+    }
+
+
+    async removeCategory(conversation: MyConversation, ctx: MyContext) {
+        const keyboard = await conversation.external(() =>
+            Keyboard.from(ctx.user.categories.length ? ctx.user.categories.map((c) => [c]) : [["Nothing"]]).resized()
+        )
+        await ctx.reply('Choose category to delete', {reply_markup: keyboard})
+        ctx = await conversation.wait();
+        const category = ctx.msg?.text;
+        if (!category) return;
+        await conversation.external(async () =>
+            await User.updateOne({_id: ctx.user._id}, {$pull: {categories: category}})
+        )
+        await ctx.reply(`${category} removed`, {reply_markup: {remove_keyboard: true}});
+    }
+
+    async editCategory(conversation: MyConversation, ctx: MyContext) {
+        console.log(ctx.user)
+        const keyboard = await conversation.external(() =>
+            Keyboard.from(ctx.user.categories.length ? ctx.user.categories.map((c) => [c]) : [["Nothing"]]).resized()
+        )
+        await ctx.reply('Choose category to edit', {reply_markup: keyboard})
+        ctx = await conversation.wait();
+        const oldCategory = ctx.msg?.text;
+        if (!oldCategory) return;
+        await ctx.reply('Write name for new category', {reply_markup: {remove_keyboard: true}})
+        ctx = await conversation.wait();
+        const newCategory = ctx.msg?.text;
+        if (!newCategory) return;
+        const oldExists = ctx.user.categories.includes(oldCategory);
+        const newExists = ctx.user.categories.includes(newCategory);
+        const newExistsInPayments = await Payment.exists({user: ctx.user._id, category: newCategory});
+        if (!oldExists) return await ctx.reply(`${oldCategory} not exists`);
+        if (newExists) return await ctx.reply(`${newCategory} already exists`);
+        if (newExistsInPayments) return await ctx.reply(`${newExistsInPayments} already exists in your history`);
+        await conversation.external(async () => {
+            await Payment.updateMany({user: ctx.user._id, category: oldCategory}, {$set: {category: newCategory}});
+            await User.updateOne({_id: ctx.user._id}, {
+                $pull: {categories: oldCategory},
+            })
+            await User.updateOne({_id: ctx.user._id}, {
+                $addToSet: {categories: newCategory}
+            })
+        })
+        await ctx.reply(`Renamed ${oldCategory} => ${newCategory}`);
+    }
+
+    async addCategory(conversation: MyConversation, ctx: MyContext) {
+        await ctx.reply('Write name for new category')
+        ctx = await conversation.wait();
+        const category = ctx.msg?.text;
+        if (!category) return;
+        await User.updateOne({_id: ctx.user._id}, {$addToSet: {categories: category}});
+        await ctx.reply(`${category} added`, {reply_markup: {remove_keyboard: true}})
+    }
+
+    async sendStatistic(ctx: MyContext) {
+        const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const payments = await Payment.find({timestamp: {$gte: monthAgo}});
+        const summary: {[key in string]: number} = {};
+        payments.forEach(p => {
+            if (p.amount < 0) {
+                if (!summary[p.category]) summary[p.category] = 0;
+                summary[p.category] += -p.amount;
+            } else {
+                if (!summary['income']) summary['income'] = 0;
+                summary['income'] += p.amount;
+            }
+        })
+
+        let msg = Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '')
+        await ctx.reply(msg);
     }
 }
 

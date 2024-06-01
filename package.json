@@ -19,6 +19,7 @@
     "@binance/connector": "^3.3.0",
     "@grammyjs/conversations": "^1.2.0",
     "@grammyjs/menu": "^1.2.1",
+    "@grammyjs/stateless-question": "^3.0.1",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

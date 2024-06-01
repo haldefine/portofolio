@@ -71,9 +71,11 @@ class MonobankClient {
                     timestamp: data.time,
                     description: data.description,
                     rawData: JSON.stringify(data),
+                    category: 'Uncategorized'
                 }
-                await Payment.create(paymentObject);
-                await TelegramService.handleNewPayment(paymentObject);
+                const payment = await Payment.create(paymentObject);
+                if (!payment) throw new Error('No payment found.');
+                await TelegramService.handleNewPayment(payment);
             } catch (e) {
                 console.log(e);
             }

@@ -2,6 +2,7 @@ import 'dotenv/config'
 import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
+import TelegramService from "./telegram-service";
 
 (async () => {
     await Mongodb.start()
@@ -10,10 +11,23 @@ import MonobankClient from "./monobank-client";
     await Promise.all(users.map(async user =>
         user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
     ))
+    await TelegramService.handleNewPayment({
+        id: '9325032523',
+        user: '665a4b3ed06658e6b7c4acd4',
+        amount: -1000,
+        operationAmount: -1000,
+        currency: 'USD',
+        account: 'req.body.data.account',
+        timestamp: Date.now(),
+        description: 'data.description',
+        rawData: 'JSON.stringify(data)',
+        category: 'Uncategorized'
+    })
 })()
 
 
 const shutdown = async (reason: unknown, code: number) => {
+    console.log(reason)
     process.exit(code);
 }
 

@@ -10,6 +10,7 @@ export interface IPayment {
     timestamp: number,
     description: string,
     rawData: string,
+    category: string,
 }
 
 export const PaymentSchema = new mongoose.Schema<IPayment>({
@@ -21,6 +22,7 @@ export const PaymentSchema = new mongoose.Schema<IPayment>({
     timestamp: {type: Number, required: true},
     description: {type: String, required: true},
     rawData: {type: String, required: true},
+    category: {type: String, required: true}
 });
 
 export default mongoose.model<IPayment>('Payment', PaymentSchema);
