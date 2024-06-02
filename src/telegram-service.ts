@@ -33,7 +33,7 @@ class TelegramService {
             .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
             .text("Edit category", (ctx) => ctx.conversation.enter('editCategory')).row()
             .text('Statistic', this.sendStatistic).row()
-            .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceed_transaction')).row()
+            .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
         this.bot.use(this.startMenu);
         const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
         this.bot.command('start', start);
