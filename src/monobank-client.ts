@@ -6,6 +6,7 @@ const Currencies = require('../currencies.json')
 
 class MonobankClient {
     private readonly baseUrl = 'https://api.monobank.ua'
+    private cachedRates: {currencyA: string, currencyB: string, rateSell: number, rateBuy: number, rateCross: number}[] = [];
 
     constructor() {
         const app = express()
@@ -102,13 +103,17 @@ class MonobankClient {
         return res.data;
     }
 
-    async getCurrencyRate(): Promise<{currencyA: string, currencyB: string, rateSell: number, rateBuy: number, rateCross: number}[]> {
-        const res = await axios.get(`${this.baseUrl}/bank/currency`)
-        res.data.forEach((r: any) => {
-            r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString())
-            r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString())
-        })
-        return res.data;
+    async getCurrencyRate() {
+        try {
+            const res = await axios.get(`${this.baseUrl}/bank/currency`)
+            res.data.forEach((r: any) => {
+                r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString()).code
+                r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString()).code
+            })
+            this.cachedRates = res.data
+        } catch (e) {
+        }
+        return this.cachedRates;
     }
 }
 

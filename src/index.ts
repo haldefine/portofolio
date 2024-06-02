@@ -2,14 +2,16 @@ import 'dotenv/config'
 import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
+import TelegramService from "./telegram-service";
 
 (async () => {
     await Mongodb.start()
 
-    const users = await User.find({apiKey: {$exists: true}});
-    await Promise.all(users.map(async user =>
-        user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
-    ))
+    // const users = await User.find({apiKey: {$exists: true}});
+    // await Promise.all(users.map(async user =>
+    //     user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
+    // ))
+    TelegramService
 
 
 

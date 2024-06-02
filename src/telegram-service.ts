@@ -73,7 +73,7 @@ class TelegramService {
             return;
         }
         for (const payment of payments) {
-            const keyboard = InlineKeyboard.from([ctx.user.categories.map((c) => InlineKeyboard.text(c, c))])
+            const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
             if (payment.amount <= 0) {
                 await ctx.reply(`Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
             } else {
@@ -159,7 +159,7 @@ class TelegramService {
     async sendStatistic(ctx: MyContext) {
         const exchangeRates = await MonobankClient.getCurrencyRate();
         const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        const payments = await Payment.find({timestamp: {$gte: monthAgo}});
+        const payments = await Payment.find({timestamp: {$gte: monthAgo / 1000}});
         const summary: {[key in string]: number} = {};
         payments.forEach(p => {
             let amount;
@@ -180,6 +180,7 @@ class TelegramService {
         })
 
         let msg = Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '')
+        if (!msg) return ctx.reply('No data')
         await ctx.reply(msg);
     }
 }
