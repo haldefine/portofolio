@@ -2,24 +2,16 @@ import 'dotenv/config'
 import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
-import TelegramService from "./telegram-service";
-import Payment from "./models/Payment";
 
 (async () => {
     await Mongodb.start()
 
-    // const users = await User.find({apiKey: {$exists: true}});
-    // await Promise.all(users.map(async user =>
-    //     user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
-    // ))
+    const users = await User.find({apiKey: {$exists: true}});
+    await Promise.all(users.map(async user =>
+        user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
+    ))
 
 
-    const res = JSON.parse(JSON.stringify(await Payment.find({user: '665a25d46949d38ee94cf36c', $or: [
-            { category: 'Uncategorized' },
-            { category: { $exists: false } },
-        ]})))
-    console.log(res.length)
-    const a= TelegramService;
 
     // const paymentObject = {
     //     user: '665a4b3ed06658e6b7c4acd4',

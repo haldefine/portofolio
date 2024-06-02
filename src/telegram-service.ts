@@ -79,7 +79,7 @@ class TelegramService {
             } else {
                 await ctx.reply(`Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
             }
-            ctx = await conversation.wait();
+            ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
             await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
             await ctx.deleteMessage();
         }
