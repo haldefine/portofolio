@@ -95,12 +95,12 @@ class TelegramService {
         await ctx.reply('Write amount');
         const amount = Number((await conversation.wait()).message?.text);
         await ctx.reply('Write currency');
-        const currency = (await conversation.wait()).message?.text;
-        const paymentObject = {
+        const currency = (await conversation.wait()).message?.text as string;
+        const paymentObject: IPayment = {
             user: ctx.user._id,
             amount: -amount * 100,
             operationAmount: -amount * 100,
-            currency: currency,
+            currency: currency.toUpperCase(),
             timestamp: Date.now(),
             description: 'manual transaction',
             category: 'Uncategorized'
