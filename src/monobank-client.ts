@@ -102,8 +102,12 @@ class MonobankClient {
         return res.data;
     }
 
-    async getCurrencyRate() {
+    async getCurrencyRate(): Promise<{currencyA: string, currencyB: string, rateSell: number, rateBuy: number, rateCross: number}[]> {
         const res = await axios.get(`${this.baseUrl}/bank/currency`)
+        res.data.forEach((r: any) => {
+            r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString())
+            r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString())
+        })
         return res.data;
     }
 }

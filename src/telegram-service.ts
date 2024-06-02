@@ -9,6 +9,7 @@ import {
     createConversation
 } from "@grammyjs/conversations";
 import {StatelessQuestion} from '@grammyjs/stateless-question';
+import MonobankClient from "./monobank-client";
 
 type MyContext = Context & ConversationFlavor & {user: IUser&{_id: string}};
 type MyConversation = Conversation<MyContext>;
@@ -16,7 +17,6 @@ type MyConversation = Conversation<MyContext>;
 class TelegramService {
     private bot: Bot<MyContext, Api>;
     private startMenu: Menu<MyContext>;
-    private chooseCategoryQuestion: StatelessQuestion<MyContext>;
 
     constructor() {
         this.bot = new Bot(process.env.BOT_TOKEN as string);
@@ -24,23 +24,27 @@ class TelegramService {
         this.bot.use(session({ initial: () => ({}) }));
         this.bot.use(conversations());
 
+
         this.bot.use(createConversation(this.removeCategory))
         this.bot.use(createConversation(this.addCategory))
         this.bot.use(createConversation(this.editCategory))
-
         this.startMenu = new Menu<MyContext>("start-menu")
-            .text("Add category", async (ctx) => await ctx.conversation.enter('addCategory')).row()
-            .text("Remove category", async (ctx) => await ctx.conversation.enter('removeCategory')).row()
-            .text("Edit category", async (ctx) => await ctx.conversation.enter('editCategory')).row()
-            .text('Statistic', this.sendStatistic)
+            .text("Add category", (ctx) => ctx.conversation.enter('addCategory')).row()
+            .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
+            .text("Edit category", (ctx) => ctx.conversation.enter('editCategory')).row()
+            .text('Statistic', this.sendStatistic).row()
+            .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceed_transaction')).row()
         this.bot.use(this.startMenu);
-        this.bot.command('start', async (ctx) =>
-            await ctx.reply('Hi', {reply_markup: this.startMenu})
-        );
-        this.chooseCategoryQuestion = new StatelessQuestion('categoryQuestion', (ctx, paymentId) => {
-            console.log('User thinks unicorns are doing:', ctx, paymentId)
+        const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
+        this.bot.command('start', start);
+        this.bot.command('menu', start)
+
+
+        this.bot.use(createConversation(this.proceedTransaction.bind(this), 'proceedTransaction'))
+        this.bot.callbackQuery('proceed_transaction', async (ctx) => {
+            await ctx.deleteMessage();
+            await ctx.conversation.enter('proceedTransaction')
         })
-        this.bot.use(this.chooseCategoryQuestion.middleware());
 
         this.bot.start();
     }
@@ -48,13 +52,33 @@ class TelegramService {
     async handleNewPayment(payment: IPayment&{id?: string}) {
         const user = await User.findById(payment.user);
         if (!user) throw new Error("User does not exist");
-        if (payment.amount <= 0) {
-            const keyboard = InlineKeyboard.from([user.categories.map((c) => InlineKeyboard.text(c, c))])
-            await this.bot.api.sendMessage(user.t_id, `Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`+this.chooseCategoryQuestion.messageSuffixMarkdown(payment.id), {reply_markup: keyboard, parse_mode: 'Markdown'})
+        const keyboard = new InlineKeyboard().text('Шо там?', 'proceed_transaction')
+        await this.bot.api.sendMessage(user.t_id, 'Новая транза', {reply_markup: keyboard})
+    }
 
-        } else {
-            await this.bot.api.sendMessage(user.t_id, `Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`)
+    async proceedTransaction(conversation: MyConversation, ctx: MyContext) {
+        const payments = await conversation.external(
+            async () => JSON.parse(JSON.stringify(await Payment.find({user: ctx.user._id, $or: [
+                    { category: 'Uncategorized' },
+                    { category: { $exists: false } },
+                ]})))
+        )
+        if (!payments.length) {
+            await ctx.reply('No new payments');
+            return;
         }
+        for (const payment of payments) {
+            const keyboard = InlineKeyboard.from([ctx.user.categories.map((c) => InlineKeyboard.text(c, c))])
+            if (payment.amount <= 0) {
+                await ctx.reply(`Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
+            } else {
+                await ctx.reply(`Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
+            }
+            ctx = await conversation.wait();
+            await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
+            await ctx.deleteMessage();
+        }
+        await ctx.reply('Done')
     }
 
     async dbMiddleware(ctx: MyContext, next: NextFunction) {
@@ -128,16 +152,25 @@ class TelegramService {
     }
 
     async sendStatistic(ctx: MyContext) {
+        const exchangeRates = await MonobankClient.getCurrencyRate();
         const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         const payments = await Payment.find({timestamp: {$gte: monthAgo}});
         const summary: {[key in string]: number} = {};
         payments.forEach(p => {
-            if (p.amount < 0) {
+            let amount;
+            if (p.currency !== 'USD') {
+                const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === p.currency)
+                if (!rate) throw new Error('no exchange rate')
+                amount = p.amount / (rate?.rateCross || rate?.rateBuy);
+            } else {
+                amount = p.amount;
+            }
+            if (amount < 0) {
                 if (!summary[p.category]) summary[p.category] = 0;
-                summary[p.category] += -p.amount;
+                summary[p.category] += -amount;
             } else {
                 if (!summary['income']) summary['income'] = 0;
-                summary['income'] += p.amount;
+                summary['income'] += amount;
             }
         })
 

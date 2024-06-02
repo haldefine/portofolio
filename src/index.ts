@@ -3,6 +3,7 @@ import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
 import TelegramService from "./telegram-service";
+import Payment from "./models/Payment";
 
 (async () => {
     await Mongodb.start()
@@ -11,8 +12,7 @@ import TelegramService from "./telegram-service";
     await Promise.all(users.map(async user =>
         user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
     ))
-    await TelegramService.handleNewPayment({
-        id: '9325032523',
+    const paymentObject = {
         user: '665a4b3ed06658e6b7c4acd4',
         amount: -1000,
         operationAmount: -1000,
@@ -22,7 +22,10 @@ import TelegramService from "./telegram-service";
         description: 'data.description',
         rawData: 'JSON.stringify(data)',
         category: 'Uncategorized'
-    })
+    }
+    const payment = await Payment.create(paymentObject);
+    if (!payment) throw new Error('No payment found.');
+    await TelegramService.handleNewPayment(payment);
 })()
 
 
