@@ -7,12 +7,10 @@ import TelegramService from "./telegram-service";
 (async () => {
     await Mongodb.start()
 
-    // const users = await User.find({apiKey: {$exists: true}});
-    // await Promise.all(users.map(async user =>
-    //     user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
-    // ))
-    TelegramService
-
+    const users = await User.find({apiKey: {$exists: true}});
+    await Promise.all(users.map(async user =>
+        user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
+    ))
 
 
     // const paymentObject = {
@@ -41,5 +39,5 @@ process.on('message', (msg) => {if (msg === 'shutdown') shutdown('message', 0)})
 process.on('SIGINT', (reason) => shutdown(reason, 0));
 process.on('SIGTERM', (reason) => shutdown(reason, 0));
 process.on('SIGQUIT', (reason) => shutdown(reason, 0));
-process.on('uncaughtException', (reason) => shutdown(reason, 1));
-process.on('unhandledRejection', (reason) => shutdown(reason, 1));
+process.on('uncaughtException', console.log);
+process.on('unhandledRejection', console.log);

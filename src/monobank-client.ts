@@ -107,11 +107,12 @@ class MonobankClient {
         try {
             const res = await axios.get(`${this.baseUrl}/bank/currency`)
             res.data.forEach((r: any) => {
-                r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString()).code
-                r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString()).code
+                r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString())?.code
+                r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString())?.code
             })
             this.cachedRates = res.data
         } catch (e) {
+            console.log(e)
         }
         return this.cachedRates;
     }

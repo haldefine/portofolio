@@ -159,13 +159,13 @@ class TelegramService {
     async sendStatistic(ctx: MyContext) {
         const exchangeRates = await MonobankClient.getCurrencyRate();
         const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        const payments = await Payment.find({timestamp: {$gte: monthAgo / 1000}});
+        const payments = await Payment.find({user: ctx.user._id, timestamp: {$gte: monthAgo / 1000}});
         const summary: {[key in string]: number} = {};
         payments.forEach(p => {
             let amount;
             if (p.currency !== 'USD') {
                 const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === p.currency)
-                if (!rate) throw new Error('no exchange rate')
+                if (!rate) return ctx.reply('no exchange rate')
                 amount = p.amount / (rate?.rateCross || rate?.rateBuy);
             } else {
                 amount = p.amount;
