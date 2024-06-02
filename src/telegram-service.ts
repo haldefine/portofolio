@@ -25,6 +25,13 @@ class TelegramService {
         this.bot.use(conversations());
 
 
+        this.bot.use(createConversation(this.proceedTransaction.bind(this), 'proceedTransaction'))
+        this.bot.callbackQuery('proceed_transaction', async (ctx) => {
+            await ctx.deleteMessage();
+            await ctx.conversation.enter('proceedTransaction')
+        })
+
+
         this.bot.use(createConversation(this.removeCategory))
         this.bot.use(createConversation(this.addCategory))
         this.bot.use(createConversation(this.editCategory))
@@ -39,12 +46,6 @@ class TelegramService {
         this.bot.command('start', start);
         this.bot.command('menu', start)
 
-
-        this.bot.use(createConversation(this.proceedTransaction.bind(this), 'proceedTransaction'))
-        this.bot.callbackQuery('proceed_transaction', async (ctx) => {
-            await ctx.deleteMessage();
-            await ctx.conversation.enter('proceedTransaction')
-        })
 
         this.bot.start();
     }
