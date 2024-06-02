@@ -35,12 +35,14 @@ class TelegramService {
         this.bot.use(createConversation(this.removeCategory))
         this.bot.use(createConversation(this.addCategory))
         this.bot.use(createConversation(this.editCategory))
+        this.bot.use(createConversation(this.addTransaction.bind(this), 'addTransaction'))
         this.startMenu = new Menu<MyContext>("start-menu")
             .text("Add category", (ctx) => ctx.conversation.enter('addCategory')).row()
             .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
             .text("Edit category", (ctx) => ctx.conversation.enter('editCategory')).row()
             .text('Statistic', this.sendStatistic).row()
             .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
+            .text('Add transaction', (ctx) => ctx.conversation.enter('addTransaction')).row()
         this.bot.use(this.startMenu);
         const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
         this.bot.command('start', start);
@@ -59,6 +61,9 @@ class TelegramService {
     }
 
     async proceedTransaction(conversation: MyConversation, ctx: MyContext) {
+        if (ctx.user.categories.length === 0) {
+            return ctx.reply('You must create categories first');
+        }
         const payments = await conversation.external(async () => {
             const payments = await Payment.find({
                 user: ctx.user._id, $or: [
@@ -84,6 +89,24 @@ class TelegramService {
             await ctx.deleteMessage();
         }
         await ctx.reply('Done')
+    }
+
+    async addTransaction(conversation: MyConversation, ctx: MyContext) {
+        await ctx.reply('Write amount');
+        const amount = Number((await conversation.wait()).message?.text);
+        await ctx.reply('Write currency');
+        const currency = (await conversation.wait()).message?.text;
+        const paymentObject = {
+            user: ctx.user._id,
+            amount: -amount * 100,
+            operationAmount: -amount * 100,
+            currency: currency,
+            timestamp: Date.now(),
+            description: 'manual transaction',
+            category: 'Uncategorized'
+        }
+        const payment = await Payment.create(paymentObject);
+        await this.proceedTransaction(conversation, ctx);
     }
 
     async dbMiddleware(ctx: MyContext, next: NextFunction) {
