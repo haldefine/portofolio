@@ -1,6 +1,6 @@
 import Payment, {IPayment} from "./models/Payment";
 import User, {IUser} from "./models/User";
-import {Api, Bot, Context, InlineKeyboard, Keyboard, NextFunction, session} from "grammy";
+import {Api, Bot, Context, GrammyError, HttpError, InlineKeyboard, Keyboard, NextFunction, session} from "grammy";
 import {Menu} from "@grammyjs/menu";
 import {
     Conversation,
@@ -47,6 +47,7 @@ class TelegramService {
         this.bot.command('menu', start)
 
 
+        this.bot.catch(console.log);
         this.bot.start();
     }
 
@@ -58,12 +59,15 @@ class TelegramService {
     }
 
     async proceedTransaction(conversation: MyConversation, ctx: MyContext) {
-        const payments = await conversation.external(
-            async () => JSON.parse(JSON.stringify(await Payment.find({user: ctx.user._id, $or: [
-                    { category: 'Uncategorized' },
-                    { category: { $exists: false } },
-                ]})))
-        )
+        const payments = await conversation.external(async () => {
+            const payments = await Payment.find({
+                user: ctx.user._id, $or: [
+                    {category: 'Uncategorized'},
+                    {category: {$exists: false}},
+                ]
+            });
+            return JSON.parse(JSON.stringify(payments)) as typeof payments;
+        })
         if (!payments.length) {
             await ctx.reply('No new payments');
             return;
