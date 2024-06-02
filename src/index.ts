@@ -12,20 +12,20 @@ import Payment from "./models/Payment";
     await Promise.all(users.map(async user =>
         user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
     ))
-    const paymentObject = {
-        user: '665a4b3ed06658e6b7c4acd4',
-        amount: -1000,
-        operationAmount: -1000,
-        currency: 'USD',
-        account: 'req.body.data.account',
-        timestamp: Date.now(),
-        description: 'data.description',
-        rawData: 'JSON.stringify(data)',
-        category: 'Uncategorized'
-    }
-    const payment = await Payment.create(paymentObject);
-    if (!payment) throw new Error('No payment found.');
-    await TelegramService.handleNewPayment(payment);
+    // const paymentObject = {
+    //     user: '665a4b3ed06658e6b7c4acd4',
+    //     amount: -1000,
+    //     operationAmount: -1000,
+    //     currency: 'USD',
+    //     account: 'req.body.data.account',
+    //     timestamp: Date.now(),
+    //     description: 'data.description',
+    //     rawData: 'JSON.stringify(data)',
+    //     category: 'Uncategorized'
+    // }
+    // const payment = await Payment.create(paymentObject);
+    // if (!payment) throw new Error('No payment found.');
+    // await TelegramService.handleNewPayment(payment);
 })()
 
 
