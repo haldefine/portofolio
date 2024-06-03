@@ -99,7 +99,6 @@ class TelegramService {
         const paymentObject: IPayment = {
             user: ctx.user._id,
             amount: -amount * 100,
-            operationAmount: -amount * 100,
             currency: currency.toUpperCase(),
             timestamp: Date.now(),
             description: 'manual transaction',

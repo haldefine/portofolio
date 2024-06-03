@@ -65,8 +65,7 @@ class MonobankClient {
                 const currency = Currencies.find((c:any) => c.number === data.currencyCode.toString())
                 const paymentObject: IPayment = {
                     user: userId,
-                    amount: data.amount,
-                    operationAmount: data.operationAmount,
+                    amount: data.operationAmount,
                     currency: currency.code,
                     account: req.body.data.account,
                     timestamp: data.time,

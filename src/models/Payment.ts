@@ -4,7 +4,6 @@ import {UserSchema} from "./User";
 export interface IPayment {
     user: Schema.Types.ObjectId | string,
     amount: number,
-    operationAmount: number,
     currency: string,
     account?: string,
     timestamp: number,
@@ -16,7 +15,6 @@ export interface IPayment {
 export const PaymentSchema = new mongoose.Schema<IPayment>({
     user: {type: Schema.Types.ObjectId, ref: "User", required: true},
     amount: {type: Number, required: true},
-    operationAmount: {type: Number, required: true},
     currency: {type: String, required: true},
     account: {type: String},
     timestamp: {type: Number, required: true},
