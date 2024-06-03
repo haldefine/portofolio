@@ -2,6 +2,7 @@ import express, {Request, Response} from 'express'
 import axios from "axios";
 import Payment, {IPayment} from "./models/Payment";
 import TelegramService from "./telegram-service";
+import User from "./models/User";
 const Currencies = require('../currencies.json')
 
 class MonobankClient {
@@ -71,10 +72,9 @@ class MonobankClient {
                     timestamp: data.time,
                     description: data.description,
                     rawData: JSON.stringify(data),
-                    category: 'Uncategorized'
+                    category: data.operationAmount < 0 ? 'Income' : 'Uncategorized'
                 }
-                const payment = await Payment.create(paymentObject);
-                if (!payment) throw new Error('No payment found.');
+                const payment = await this.createPayment(paymentObject, userId);
                 await TelegramService.handleNewPayment(payment);
             } catch (e) {
                 console.log(e);
@@ -83,6 +83,22 @@ class MonobankClient {
         })
 
         app.listen(8080);
+    }
+
+    async createPayment(paymentObject: IPayment, userId: string) {
+        const payment = await Payment.create(paymentObject);
+        if (!payment) throw new Error('No payment found.');
+
+        const exchangeRates = await this.getCurrencyRate();
+        const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === payment.currency)
+        if (rate) {
+            const dollarsAmount = payment.amount / (rate.rateCross || rate.rateBuy);
+            await User.updateOne({_id: userId}, {$inc: {balance: dollarsAmount}});
+        } else {
+            console.log('no rate for new transaction')
+        }
+
+        return payment;
     }
 
     async setupWebhook(apiKey: string, userId: string) {
@@ -112,6 +128,15 @@ class MonobankClient {
             this.cachedRates = res.data
         } catch (e) {
             console.log(e)
+        }
+        for (const r of [...this.cachedRates]) {
+            this.cachedRates.push({
+                currencyA: r.currencyB,
+                currencyB: r.currencyA,
+                rateBuy: 1 / r.rateBuy,
+                rateCross: 1 / r.rateCross,
+                rateSell: 1 / r.rateSell,
+            })
         }
         return this.cachedRates;
     }

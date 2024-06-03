@@ -1,4 +1,5 @@
 import * as mongoose from "mongoose";
+import User from "./models/User";
 
 export default {
     async start() {

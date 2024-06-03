@@ -8,8 +8,8 @@ import {
     conversations,
     createConversation
 } from "@grammyjs/conversations";
-import {StatelessQuestion} from '@grammyjs/stateless-question';
 import MonobankClient from "./monobank-client";
+import {Document} from "mongoose";
 
 type MyContext = Context & ConversationFlavor & {user: IUser&{_id: string}};
 type MyConversation = Conversation<MyContext>;
@@ -36,6 +36,7 @@ class TelegramService {
         this.bot.use(createConversation(this.addCategory))
         this.bot.use(createConversation(this.editCategory))
         this.bot.use(createConversation(this.addTransaction.bind(this), 'addTransaction'))
+        this.bot.use(createConversation(this.setBalance.bind(this), 'setBalance'))
         this.startMenu = new Menu<MyContext>("start-menu")
             .text("Add category", (ctx) => ctx.conversation.enter('addCategory')).row()
             .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
@@ -43,6 +44,7 @@ class TelegramService {
             .text('Statistic', this.sendStatistic).row()
             .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
             .text('Add transaction', (ctx) => ctx.conversation.enter('addTransaction')).row()
+            .text('Set balance', (ctx) => ctx.conversation.enter('setBalance')).row()
         this.bot.use(this.startMenu);
         const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
         this.bot.command('start', start);
@@ -51,6 +53,15 @@ class TelegramService {
 
         this.bot.catch(console.log);
         this.bot.start();
+    }
+
+    async setBalance(conversation: MyConversation, ctx: MyContext) {
+        await ctx.reply('Write new balance');
+        ctx = await conversation.wait();
+        const balance = ctx.msg?.text;
+        if (!balance) return;
+        await User.updateOne({_id: ctx.user._id}, {$set: {balance: Number(balance)*100}})
+        await ctx.reply(`Balance set to ${balance}`)
     }
 
     async handleNewPayment(payment: IPayment&{id?: string}) {
@@ -78,17 +89,22 @@ class TelegramService {
             return;
         }
         for (const payment of payments) {
-            const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
-            if (payment.amount <= 0) {
-                await ctx.reply(`Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
-            } else {
-                await ctx.reply(`Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
-            }
-            ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-            await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
-            await ctx.deleteMessage();
+            ctx = await this.askCategory(conversation, ctx, payment)
         }
         await ctx.reply('Done')
+    }
+
+    async askCategory(conversation: MyConversation, ctx: MyContext, payment: IPayment&Document) {
+        const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
+        if (payment.amount <= 0) {
+            await ctx.reply(`Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
+        } else {
+            await ctx.reply(`Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
+        }
+        ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
+        await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
+        await ctx.deleteMessage();
+        return ctx;
     }
 
     async addTransaction(conversation: MyConversation, ctx: MyContext) {
@@ -96,16 +112,18 @@ class TelegramService {
         const amount = Number((await conversation.wait()).message?.text);
         await ctx.reply('Write currency');
         const currency = (await conversation.wait()).message?.text as string;
+        await ctx.reply('Write description');
+        const description = (await conversation.wait()).message?.text as string;
         const paymentObject: IPayment = {
             user: ctx.user._id,
             amount: -amount * 100,
             currency: currency.toUpperCase(),
             timestamp: Date.now(),
-            description: 'manual transaction',
+            description: description,
             category: 'Uncategorized'
         }
-        const payment = await Payment.create(paymentObject);
-        await this.proceedTransaction(conversation, ctx);
+        const payment = await MonobankClient.createPayment(paymentObject, ctx.user._id)
+        ctx = await this.askCategory(conversation, ctx, payment)
     }
 
     async dbMiddleware(ctx: MyContext, next: NextFunction) {
@@ -115,12 +133,13 @@ class TelegramService {
             const userObject: IUser = {
                 t_id: ctx.from.id,
                 categories: [],
+                balance: 0
             }
             user = await User.create(userObject)
         }
         ctx.user = JSON.parse(JSON.stringify(user));
         // ctx.user = user;
-        next();
+        await next();
     }
 
 
@@ -183,6 +202,8 @@ class TelegramService {
         const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         const payments = await Payment.find({user: ctx.user._id, timestamp: {$gte: monthAgo / 1000}});
         const summary: {[key in string]: number} = {};
+        let income = 0;
+        let expenses = 0;
         payments.forEach(p => {
             let amount;
             if (p.currency !== 'USD') {
@@ -195,13 +216,19 @@ class TelegramService {
             if (amount < 0) {
                 if (!summary[p.category]) summary[p.category] = 0;
                 summary[p.category] += -amount;
+                expenses += -amount;
             } else {
-                if (!summary['income']) summary['income'] = 0;
-                summary['income'] += amount;
+                income += amount;
             }
         })
 
-        let msg = Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '')
+        let msg = 'Last 30d:\n';
+        msg += `Transactions: ${payments.length}\n\n`;
+        msg += `Income: ${(income/100).toFixed(2)}\n\n`;
+        msg += Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '')
+        msg += `\nExpenses: ${(expenses/100).toFixed(2)}\n`
+        msg += `Total: ${(income/100 - expenses/100).toFixed(2)}\n`
+        msg += `Balance: ${(ctx.user.balance/100).toFixed(2)}\n`
         if (!msg) return ctx.reply('No data')
         await ctx.reply(msg);
     }

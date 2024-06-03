@@ -6,7 +6,6 @@ import TelegramService from "./telegram-service";
 
 (async () => {
     await Mongodb.start()
-
     const users = await User.find({apiKey: {$exists: true}});
     await Promise.all(users.map(async user =>
         user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)

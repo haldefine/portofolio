@@ -1,5 +1,4 @@
-import mongoose, {Document, Schema} from 'mongoose';
-import {UserSchema} from "./User";
+import mongoose, {Schema} from 'mongoose';
 
 export interface IPayment {
     user: Schema.Types.ObjectId | string,
