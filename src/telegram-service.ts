@@ -222,11 +222,10 @@ class TelegramService {
             }
         })
 
-        let msg = 'Last 30d:\n';
-        msg += `Transactions: ${payments.length}\n\n`;
-        msg += `Income: ${(income/100).toFixed(2)}\n\n`;
+        let msg = `Last 30days: ${payments.length} transactions\n\n`;
         msg += Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '')
         msg += `\nExpenses: ${(expenses/100).toFixed(2)}\n`
+        msg += `Income: ${(income/100).toFixed(2)}\n`;
         msg += `Total: ${(income/100 - expenses/100).toFixed(2)}\n`
         msg += `Balance: ${(ctx.user.balance/100).toFixed(2)}\n`
         if (!msg) return ctx.reply('No data')
