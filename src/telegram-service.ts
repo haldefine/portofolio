@@ -95,15 +95,15 @@ class TelegramService {
     }
 
     async askCategory(conversation: MyConversation, ctx: MyContext, payment: IPayment&Document) {
-        const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
         if (payment.amount <= 0) {
+            const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
             await ctx.reply(`Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
+            ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
+            await Payment.updateOne({_id: payment._id.toString()}, {$set: {category: ctx.callbackQuery?.data}});
+            await ctx.deleteMessage();
         } else {
             await ctx.reply(`Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
         }
-        ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-        await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
-        await ctx.deleteMessage();
         return ctx;
     }
 
