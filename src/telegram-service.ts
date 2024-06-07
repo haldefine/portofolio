@@ -193,39 +193,53 @@ class TelegramService {
     }
 
     async sendStatistic(ctx: MyContext) {
+        await ctx.reply(`Current balance: ${(ctx.user.balance/100).toFixed(2)}`)
+
         const exchangeRates = await MonobankClient.getCurrencyRate();
-        const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-        const payments = await Payment.find({user: ctx.user._id, timestamp: {$gte: monthAgo / 1000}});
-        const summary: {[key in string]: number} = {};
-        let expenses = 0, income = 0;
-        payments.forEach(p => {
-            let amount;
-            if (p.currency !== 'USD') {
-                const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === p.currency)
-                if (!rate) return ctx.reply('no exchange rate')
-                amount = p.amount / (rate?.rateCross || rate?.rateBuy);
-            } else {
-                amount = p.amount;
-            }
+        const now = Date.now();
+        const month = (shift: number) => new Date(new Date().getFullYear(), new Date().getMonth() + shift + 1, 1);
+        const timeframes = [
+            {$gte: now - 365 * 24 * 60 * 60 * 1000, $lte: now, name: '365 days'},
+            {$gte: now - 90 * 24 * 60 * 60 * 1000, $lte: now, name: '90 days'},
+            {$gte: now - 30 * 24 * 60 * 60 * 1000, $lte: now, name: '30 days'},
+            {$gte: now - 7 * 24 * 60 * 60 * 1000, $lte: now, name: '7 days'},
+            {$gte: month(-1).getTime(), $lte: month(0).getTime(), name: month(-1).toLocaleString('default', { month: 'long' })},
+            {$gte: month(-2).getTime(), $lte: month(-1).getTime(), name: month(-2).toLocaleString('default', { month: 'long' })},
+            {$gte: month(-3).getTime(), $lte: month(-2).getTime(), name: month(-3).toLocaleString('default', { month: 'long' })},
+        ];
+        for (const timeframe of timeframes) {
+            const payments = await Payment.find({user: ctx.user._id, timestamp: {$gte: timeframe.$gte / 1000, $lte: timeframe.$lte / 1000}});
+            const summary: {[key in string]: number} = {};
+            let expenses = 0, income = 0;
+            payments.forEach(p => {
+                let amount;
+                if (p.currency !== 'USD') {
+                    const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === p.currency)
+                    if (!rate) return ctx.reply('no exchange rate')
+                    amount = p.amount / (rate?.rateCross || rate?.rateBuy);
+                } else {
+                    amount = p.amount;
+                }
 
-            if (!summary[p.category]) summary[p.category] = 0;
-            summary[p.category] += amount;
+                if (!summary[p.category]) summary[p.category] = 0;
+                summary[p.category] += amount;
 
-            if (amount >  0) {
-                income += amount;
-            } else {
-                expenses += amount;
-            }
-        })
+                if (amount >  0) {
+                    income += amount;
+                } else {
+                    expenses += amount;
+                }
+            })
 
-        let msg = `Last 30days:\n\n` +
-            Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '') + '\n' +
-            `Expenses: ${(expenses/100).toFixed(2)}\n` +
-            `Income: ${(income/100).toFixed(2)}\n` +
-            `Total: ${(income/100 - expenses/100).toFixed(2)}\n` +
-            `Balance: ${(ctx.user.balance/100).toFixed(2)}\n` +
-            `Transactions: ${payments.length}`;
-        await ctx.reply(msg);
+            let msg = `${timeframe.name}:\n\n` +
+                Object.entries(summary).sort((a, b) => a[1] - b[1])
+                    .reduce((prev, curr) => prev + `${curr[0]}: ${curr[1] > 0 ? '+' : ''}${(curr[1]/100).toFixed(2)}\n`, '') + '\n' +
+                `Expenses: ${(expenses/100).toFixed(2)}\n` +
+                `Income: ${(income/100).toFixed(2)}\n` +
+                `Total: ${(expenses/100 + income/100).toFixed(2)}\n` +
+                `Transactions: ${payments.length}`;
+            await ctx.reply(msg);
+        }
     }
 }
 
