@@ -72,7 +72,7 @@ class MonobankClient {
                     timestamp: data.time,
                     description: data.description,
                     rawData: JSON.stringify(data),
-                    category: data.operationAmount < 0 ? 'Income' : 'Uncategorized'
+                    category: 'Uncategorized'
                 }
                 const payment = await this.createPayment(paymentObject, userId);
                 await TelegramService.handleNewPayment(payment);

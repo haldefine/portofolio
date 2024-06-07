@@ -1,6 +1,6 @@
 import Payment, {IPayment} from "./models/Payment";
 import User, {IUser} from "./models/User";
-import {Api, Bot, Context, GrammyError, HttpError, InlineKeyboard, Keyboard, NextFunction, session} from "grammy";
+import {Api, Bot, Context, InlineKeyboard, Keyboard, NextFunction, session} from "grammy";
 import {Menu} from "@grammyjs/menu";
 import {
     Conversation,
@@ -95,20 +95,16 @@ class TelegramService {
     }
 
     async askCategory(conversation: MyConversation, ctx: MyContext, payment: IPayment&Document) {
-        if (payment.amount <= 0) {
-            const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
-            await ctx.reply(`Куда потратил?!\n${(-payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
-            ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-            await Payment.updateOne({_id: payment._id.toString()}, {$set: {category: ctx.callbackQuery?.data}});
-            await ctx.deleteMessage();
-        } else {
-            await ctx.reply(`Деньги пришли\n${(payment.amount/100).toFixed(2)}${payment.currency} ${payment.description}`, {reply_markup: keyboard})
-        }
+        const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
+        await ctx.reply(`Ану шо это?!\n${(-payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description}`, {reply_markup: keyboard})
+        ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
+        await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
+        await ctx.deleteMessage();
         return ctx;
     }
 
     async addTransaction(conversation: MyConversation, ctx: MyContext) {
-        await ctx.reply('Write amount');
+        await ctx.reply('Write amount (-100 for expense, 100 for income)');
         const amount = Number((await conversation.wait()).message?.text);
         await ctx.reply('Write currency');
         const currency = (await conversation.wait()).message?.text as string;
@@ -116,7 +112,7 @@ class TelegramService {
         const description = (await conversation.wait()).message?.text as string;
         const paymentObject: IPayment = {
             user: ctx.user._id,
-            amount: -amount * 100,
+            amount: amount * 100,
             currency: currency.toUpperCase(),
             timestamp: Date.now(),
             description: description,
@@ -158,7 +154,6 @@ class TelegramService {
     }
 
     async editCategory(conversation: MyConversation, ctx: MyContext) {
-        console.log(ctx.user)
         const keyboard = await conversation.external(() =>
             Keyboard.from(ctx.user.categories.length ? ctx.user.categories.map((c) => [c]) : [["Nothing"]]).resized()
         )
@@ -202,8 +197,7 @@ class TelegramService {
         const monthAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
         const payments = await Payment.find({user: ctx.user._id, timestamp: {$gte: monthAgo / 1000}});
         const summary: {[key in string]: number} = {};
-        let income = 0;
-        let expenses = 0;
+        let expenses = 0, income = 0;
         payments.forEach(p => {
             let amount;
             if (p.currency !== 'USD') {
@@ -213,22 +207,24 @@ class TelegramService {
             } else {
                 amount = p.amount;
             }
-            if (amount < 0) {
-                if (!summary[p.category]) summary[p.category] = 0;
-                summary[p.category] += -amount;
-                expenses += -amount;
-            } else {
+
+            if (!summary[p.category]) summary[p.category] = 0;
+            summary[p.category] += amount;
+
+            if (amount >  0) {
                 income += amount;
+            } else {
+                expenses += amount;
             }
         })
 
-        let msg = `Last 30days: ${payments.length} transactions\n\n`;
-        msg += Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '')
-        msg += `\nExpenses: ${(expenses/100).toFixed(2)}\n`
-        msg += `Income: ${(income/100).toFixed(2)}\n`;
-        msg += `Total: ${(income/100 - expenses/100).toFixed(2)}\n`
-        msg += `Balance: ${(ctx.user.balance/100).toFixed(2)}\n`
-        if (!msg) return ctx.reply('No data')
+        let msg = `Last 30days:\n\n` +
+            Object.entries(summary).reduce((prev, curr) => prev + `${curr[0]}: ${(curr[1]/100).toFixed(2)}\n`, '') + '\n' +
+            `Expenses: ${(expenses/100).toFixed(2)}\n` +
+            `Income: ${(income/100).toFixed(2)}\n` +
+            `Total: ${(income/100 - expenses/100).toFixed(2)}\n` +
+            `Balance: ${(ctx.user.balance/100).toFixed(2)}\n` +
+            `Transactions: ${payments.length}`;
         await ctx.reply(msg);
     }
 }

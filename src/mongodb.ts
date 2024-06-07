@@ -1,5 +1,5 @@
 import * as mongoose from "mongoose";
-import User from "./models/User";
+import Payment from "./models/Payment";
 
 export default {
     async start() {
