@@ -73,7 +73,6 @@ class TelegramService {
     }
 
     async proceedTransaction(conversation: MyConversation, ctx: MyContext) {
-        console.log(ctx.user)
         if (ctx.user.categories.length === 0) {
             return ctx.reply('You must create categories first');
         }
@@ -103,9 +102,7 @@ class TelegramService {
         const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
         await ctx.reply(`Ану шо это?!\n${(-payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description}`, {reply_markup: keyboard})
         ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-        console.log(payment.id)
         const res = await Payment.updateOne({id: payment.id}, {$set: {category: ctx.callbackQuery?.data}});
-        console.log(res)
         await ctx.deleteMessage();
         return ctx;
     }
