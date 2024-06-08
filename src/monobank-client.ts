@@ -52,7 +52,7 @@ class MonobankClient {
 
         await User.updateOne({id: userId}, {$inc: {balance: payment.dollarsAmount}});
 
-        return payment;
+        return payment.toJSON();
     }
 
     async setupWebhook(apiKey: string, userId: string) {
