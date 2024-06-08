@@ -50,14 +50,7 @@ class MonobankClient {
         const payment = await Payment.create(paymentObject);
         if (!payment) throw new Error('No payment found.');
 
-        const exchangeRates = await this.getCurrencyRate();
-        const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === payment.currency)
-        if (rate) {
-            const dollarsAmount = payment.amount / (rate.rateCross || rate.rateBuy);
-            await User.updateOne({id: userId}, {$inc: {balance: dollarsAmount}});
-        } else {
-            console.log('no rate for new transaction')
-        }
+        await User.updateOne({id: userId}, {$inc: {balance: payment.dollarsAmount}});
 
         return payment;
     }
