@@ -2,6 +2,7 @@ import 'dotenv/config'
 import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
+import BinanceProcessor from "./binance/binance-processor";
 
 (async () => {
     await Mongodb.start()

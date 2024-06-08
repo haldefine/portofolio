@@ -5,9 +5,10 @@ import {IAsset, ITrade, PositionData, TradingData,} from './binance-types';
 class BinanceProcessor {
 
     private readonly client: Spot;
-
+    readonly time: number;
     constructor() {
         this.client = new Spot('1lEU4VctSHd9lNfwKEuPhtsJZRHgGuZokhjaNIb4NO7omL8QrXtoH8MJGJu82ZaG', 'o82L7zP8M0pBNzCFl3Ei0K4DLgnr69JMJUA3ebEaSSS2nwjR7YcxJy4bMeKxYo1W');
+        this.time = new Date('2024-03-11T00:00:00Z').getTime();
     }
 
 // Create an array of trading data objects
@@ -44,11 +45,11 @@ class BinanceProcessor {
     }
 
 
-    async getTrades(assets: IAsset[], baseCurrency: IAsset, fromTime?: number): Promise<ITrade[]> {
+    async getTrades(assets: IAsset[], baseAsset: IAsset, fromTime?: number): Promise<ITrade[]> {
         let trades: ITrade[] = [];
-        assets = assets.filter(asset => (asset.asset !== baseCurrency.asset));
+        assets = assets.filter(asset => (asset.asset !== baseAsset.asset));
         for (const asset of assets) {
-            const response = await this.client.myTrades(asset.asset + baseCurrency.asset);
+            const response = await this.client.myTrades(asset.asset + baseAsset.asset);
             response.data.forEach((trade: ITrade) => {
                 if (trade.time >= (fromTime || 0)){
                     trades.push(trade);
