@@ -2,7 +2,6 @@ import 'dotenv/config'
 import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
-import TelegramService from "./telegram-service";
 
 (async () => {
     await Mongodb.start()

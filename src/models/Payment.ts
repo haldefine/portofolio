@@ -1,8 +1,11 @@
 import mongoose, {Schema} from 'mongoose';
+import {nanoid} from "nanoid";
 
 export interface IPayment {
-    user: Schema.Types.ObjectId | string,
+    id: string,
+    user: string,
     amount: number,
+    dollarsAmount: number,
     currency: string,
     account?: string,
     timestamp: number,
@@ -12,8 +15,10 @@ export interface IPayment {
 }
 
 export const PaymentSchema = new mongoose.Schema<IPayment>({
-    user: {type: Schema.Types.ObjectId, ref: "User", required: true},
+    id: {type: String, required: true, unique: true, index: true, default: nanoid},
+    user: {type: String, required: true},
     amount: {type: Number, required: true},
+    dollarsAmount: {type: Number, required: true},
     currency: {type: String, required: true},
     account: {type: String},
     timestamp: {type: Number, required: true},

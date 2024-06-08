@@ -3,6 +3,7 @@ import axios from "axios";
 import Payment, {IPayment} from "./models/Payment";
 import TelegramService from "./telegram-service";
 import User from "./models/User";
+import {nanoid} from "nanoid";
 const Currencies = require('../currencies.json')
 
 class MonobankClient {
@@ -19,54 +20,14 @@ class MonobankClient {
 
         app.post('/:userId', async (req: Request, res: Response) => {
             try {
-                // {
-                //   type: 'StatementItem',
-                //   data: {
-                //     account: 'DUjRqxywosYm5ad_wFr0jg',
-                //     statementItem: {
-                //       id: 'n0P9jWnyWi-jzvAwoA',
-                //       time: 1717174454,
-                //       description: 'Інтернет-банк PUMBOnline',
-                //       mcc: 4829,
-                //       originalMcc: 4829,
-                //       amount: 1000,
-                //       operationAmount: 1000,
-                //       currencyCode: 980,
-                //       commissionRate: 0,
-                //       cashbackAmount: 0,
-                //       balance: 313656,
-                //       hold: true
-                //     }
-                //   }
-                // }
-
-                // {
-                //   type: 'StatementItem',
-                //   data: {
-                //     account: 'DUjRqxywosYm5ad_wFr0jg',
-                //     statementItem: {
-                //       id: 'hysfg3TAgKxx-CVLSg',
-                //       time: 1717174249,
-                //       description: 'Даниил',
-                //       mcc: 4829,
-                //       originalMcc: 4829,
-                //       amount: -1000,
-                //       operationAmount: -1000,
-                //       currencyCode: 980,
-                //       commissionRate: 0,
-                //       cashbackAmount: 0,
-                //       balance: 312656,
-                //       hold: true,
-                //       receiptId: '1HX0-1A46-106T-H8TA'
-                //     }
-                //   }
-                // }
                 const userId = req.params.userId;
                 const data = req.body.data.statementItem;
                 const currency = Currencies.find((c:any) => c.number === data.currencyCode.toString())
                 const paymentObject: IPayment = {
+                    id: nanoid(),
                     user: userId,
                     amount: data.operationAmount,
+                    dollarsAmount: await this.getInDollars(data.operationAmount, currency.code),
                     currency: currency.code,
                     account: req.body.data.account,
                     timestamp: data.time,
@@ -93,7 +54,7 @@ class MonobankClient {
         const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === payment.currency)
         if (rate) {
             const dollarsAmount = payment.amount / (rate.rateCross || rate.rateBuy);
-            await User.updateOne({_id: userId}, {$inc: {balance: dollarsAmount}});
+            await User.updateOne({id: userId}, {$inc: {balance: dollarsAmount}});
         } else {
             console.log('no rate for new transaction')
         }
@@ -139,6 +100,17 @@ class MonobankClient {
             })
         }
         return this.cachedRates;
+    }
+
+    async getInDollars(amount: number, currency: string) {
+        if (currency !== 'USD') {
+            const exchangeRates = await this.getCurrencyRate();
+            const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === currency)
+            if (!rate) throw new Error('no exchange rate');
+            return amount / (rate?.rateCross || rate?.rateBuy);
+        } else {
+            return amount;
+        }
     }
 }
 

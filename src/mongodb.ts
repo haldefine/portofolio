@@ -1,5 +1,4 @@
 import * as mongoose from "mongoose";
-import Payment from "./models/Payment";
 
 export default {
     async start() {

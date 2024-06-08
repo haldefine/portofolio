@@ -9,9 +9,10 @@ import {
     createConversation
 } from "@grammyjs/conversations";
 import MonobankClient from "./monobank-client";
-import {Document} from "mongoose";
+import mongoose, {Document} from "mongoose";
+import {nanoid} from "nanoid";
 
-type MyContext = Context & ConversationFlavor & {user: IUser&{_id: string}};
+type MyContext = Context & ConversationFlavor & {user: IUser};
 type MyConversation = Conversation<MyContext>;
 
 class TelegramService {
@@ -60,7 +61,7 @@ class TelegramService {
         ctx = await conversation.wait();
         const balance = ctx.msg?.text;
         if (!balance) return;
-        await User.updateOne({_id: ctx.user._id}, {$set: {balance: Number(balance)*100}})
+        await User.updateOne({id: ctx.user.id}, {$set: {balance: Number(balance)*100}})
         await ctx.reply(`Balance set to ${balance}`)
     }
 
@@ -72,17 +73,21 @@ class TelegramService {
     }
 
     async proceedTransaction(conversation: MyConversation, ctx: MyContext) {
+        console.log(ctx.user)
         if (ctx.user.categories.length === 0) {
             return ctx.reply('You must create categories first');
         }
         const payments = await conversation.external(async () => {
             const payments = await Payment.find({
-                user: ctx.user._id, $or: [
+                user: ctx.user.id, $or: [
                     {category: 'Uncategorized'},
                     {category: {$exists: false}},
                 ]
             });
-            return JSON.parse(JSON.stringify(payments)) as typeof payments;
+            return payments.map(p => {
+                return p.toJSON();
+            })
+            // return JSON.parse(JSON.stringify(payments)) as typeof payments;
         })
         if (!payments.length) {
             await ctx.reply('No new payments');
@@ -94,31 +99,35 @@ class TelegramService {
         await ctx.reply('Done')
     }
 
-    async askCategory(conversation: MyConversation, ctx: MyContext, payment: IPayment&Document) {
+    async askCategory(conversation: MyConversation, ctx: MyContext, payment: IPayment) {
         const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
         await ctx.reply(`Ану шо это?!\n${(-payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description}`, {reply_markup: keyboard})
         ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-        await Payment.updateOne({_id: payment._id}, {$set: {category: ctx.callbackQuery?.data}});
+        console.log(payment.id)
+        const res = await Payment.updateOne({id: payment.id}, {$set: {category: ctx.callbackQuery?.data}});
+        console.log(res)
         await ctx.deleteMessage();
         return ctx;
     }
 
     async addTransaction(conversation: MyConversation, ctx: MyContext) {
         await ctx.reply('Write amount (-100 for expense, 100 for income)');
-        const amount = Number((await conversation.wait()).message?.text);
+        const amount = Number((await conversation.wait()).message?.text) * 100;
         await ctx.reply('Write currency');
-        const currency = (await conversation.wait()).message?.text as string;
+        const currency = (await conversation.wait()).message?.text?.toUpperCase() as string;
         await ctx.reply('Write description');
         const description = (await conversation.wait()).message?.text as string;
         const paymentObject: IPayment = {
-            user: ctx.user._id,
-            amount: amount * 100,
-            currency: currency.toUpperCase(),
-            timestamp: Date.now(),
+            id: nanoid(),
+            user: ctx.user.id,
+            amount: amount,
+            dollarsAmount: await MonobankClient.getInDollars(amount, currency),
+            currency: currency,
+            timestamp: Math.round(Date.now() / 1000),
             description: description,
             category: 'Uncategorized'
         }
-        const payment = await MonobankClient.createPayment(paymentObject, ctx.user._id)
+        const payment = await MonobankClient.createPayment(paymentObject, ctx.user.id)
         ctx = await this.askCategory(conversation, ctx, payment)
     }
 
@@ -127,13 +136,15 @@ class TelegramService {
         let user = await User.findOne({t_id: ctx.from.id});
         if (!user) {
             const userObject: IUser = {
+                id: nanoid(),
                 t_id: ctx.from.id,
                 categories: [],
                 balance: 0
             }
             user = await User.create(userObject)
         }
-        ctx.user = JSON.parse(JSON.stringify(user));
+        ctx.user = user.toJSON();
+        // ctx.user = JSON.parse(JSON.stringify(user));
         // ctx.user = user;
         await next();
     }
@@ -148,7 +159,7 @@ class TelegramService {
         const category = ctx.msg?.text;
         if (!category) return;
         await conversation.external(async () =>
-            await User.updateOne({_id: ctx.user._id}, {$pull: {categories: category}})
+            await User.updateOne({id: ctx.user.id}, {$pull: {categories: category}})
         )
         await ctx.reply(`${category} removed`, {reply_markup: {remove_keyboard: true}});
     }
@@ -167,16 +178,16 @@ class TelegramService {
         if (!newCategory) return;
         const oldExists = ctx.user.categories.includes(oldCategory);
         const newExists = ctx.user.categories.includes(newCategory);
-        const newExistsInPayments = await Payment.exists({user: ctx.user._id, category: newCategory});
+        const newExistsInPayments = await Payment.exists({user: ctx.user.id, category: newCategory});
         if (!oldExists) return await ctx.reply(`${oldCategory} not exists`);
         if (newExists) return await ctx.reply(`${newCategory} already exists`);
         if (newExistsInPayments) return await ctx.reply(`${newExistsInPayments} already exists in your history`);
         await conversation.external(async () => {
-            await Payment.updateMany({user: ctx.user._id, category: oldCategory}, {$set: {category: newCategory}});
-            await User.updateOne({_id: ctx.user._id}, {
+            await Payment.updateMany({user: ctx.user.id, category: oldCategory}, {$set: {category: newCategory}});
+            await User.updateOne({id: ctx.user.id}, {
                 $pull: {categories: oldCategory},
             })
-            await User.updateOne({_id: ctx.user._id}, {
+            await User.updateOne({id: ctx.user.id}, {
                 $addToSet: {categories: newCategory}
             })
         })
@@ -188,7 +199,7 @@ class TelegramService {
         ctx = await conversation.wait();
         const category = ctx.msg?.text;
         if (!category) return;
-        await User.updateOne({_id: ctx.user._id}, {$addToSet: {categories: category}});
+        await User.updateOne({id: ctx.user.id}, {$addToSet: {categories: category}});
         await ctx.reply(`${category} added`, {reply_markup: {remove_keyboard: true}})
     }
 
@@ -208,26 +219,17 @@ class TelegramService {
             {$gte: month(-3).getTime(), $lte: month(-2).getTime(), name: month(-3).toLocaleString('default', { month: 'long' })},
         ];
         for (const timeframe of timeframes) {
-            const payments = await Payment.find({user: ctx.user._id, timestamp: {$gte: timeframe.$gte / 1000, $lte: timeframe.$lte / 1000}});
+            const payments = await Payment.find({user: ctx.user.id, timestamp: {$gte: timeframe.$gte / 1000, $lte: timeframe.$lte / 1000}});
             const summary: {[key in string]: number} = {};
             let expenses = 0, income = 0;
             payments.forEach(p => {
-                let amount;
-                if (p.currency !== 'USD') {
-                    const rate = exchangeRates.find(r => r.currencyA === 'USD' && r.currencyB === p.currency)
-                    if (!rate) return ctx.reply('no exchange rate')
-                    amount = p.amount / (rate?.rateCross || rate?.rateBuy);
-                } else {
-                    amount = p.amount;
-                }
-
                 if (!summary[p.category]) summary[p.category] = 0;
-                summary[p.category] += amount;
+                summary[p.category] += p.dollarsAmount;
 
-                if (amount >  0) {
-                    income += amount;
+                if (p.dollarsAmount >  0) {
+                    income += p.dollarsAmount;
                 } else {
-                    expenses += amount;
+                    expenses += p.dollarsAmount;
                 }
             })
 
