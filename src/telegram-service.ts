@@ -77,7 +77,9 @@ class TelegramService {
         ctx = await conversation.wait();
         const balance = ctx.msg?.text;
         if (!balance) return;
-        await User.updateOne({id: ctx.user.id}, {$set: {balance: Number(balance)*100}})
+        await conversation.external(() =>
+            User.updateOne({id: ctx.user.id}, {$set: {balance: Number(balance)*100}})
+        )
         await ctx.reply(`Balance set to ${balance}`)
     }
 
@@ -118,7 +120,9 @@ class TelegramService {
         const keyboard = InlineKeyboard.from(ctx.user.categories.map((c) => [InlineKeyboard.text(c, c)]))
         await ctx.reply(`Ану шо это?!\n${(-payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description}`, {reply_markup: keyboard})
         ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-        const res = await Payment.updateOne({id: payment.id}, {$set: {category: ctx.callbackQuery?.data}});
+        const res = await conversation.external(() =>
+            Payment.updateOne({id: payment.id}, {$set: {category: ctx.callbackQuery?.data}})
+        )
         await ctx.deleteMessage();
         return ctx;
     }
@@ -140,7 +144,9 @@ class TelegramService {
             description: description,
             category: 'Uncategorized'
         }
-        const payment = await MonobankClient.createPayment(paymentObject, ctx.user.id)
+        const payment = await conversation.external(() =>
+            MonobankClient.createPayment(paymentObject, ctx.user.id)
+        )
         ctx = await this.askCategory(conversation, ctx, payment)
     }
 
@@ -212,7 +218,9 @@ class TelegramService {
         ctx = await conversation.wait();
         const category = ctx.msg?.text;
         if (!category) return;
-        await User.updateOne({id: ctx.user.id}, {$addToSet: {categories: category}});
+        await conversation.external(() =>
+            User.updateOne({id: ctx.user.id}, {$addToSet: {categories: category}})
+        )
         await ctx.reply(`${category} added`, {reply_markup: {remove_keyboard: true}})
     }
 
