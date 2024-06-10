@@ -11,6 +11,7 @@ import {
 import MonobankClient from "./monobank-client";
 import mongoose, {Document} from "mongoose";
 import {nanoid} from "nanoid";
+import BinanceProcessor from "./binance/binance-processor";
 
 type MyContext = Context & ConversationFlavor & {user: IUser};
 type MyConversation = Conversation<MyContext>;
@@ -43,6 +44,7 @@ class TelegramService {
             .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
             .text("Edit category", (ctx) => ctx.conversation.enter('editCategory')).row()
             .text('Statistic', this.sendStatistic).row()
+            .text('Binance positions', this.getBinance).row()
             .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
             .text('Add transaction', (ctx) => ctx.conversation.enter('addTransaction')).row()
             .text('Set balance', (ctx) => ctx.conversation.enter('setBalance')).row()
@@ -54,6 +56,20 @@ class TelegramService {
 
         this.bot.catch(console.log);
         this.bot.start();
+    }
+
+    async getBinance(ctx: MyContext){
+        const binance = new BinanceProcessor();
+        const trades = await binance.getTrades(await binance.getAllAssets(), await binance.getAsset('USDT'), binance.time);
+        const positions = await binance.formatPositions(binance.formatTrades(trades));
+
+        let msg: string = '';
+
+        positions.forEach((position, index) => {
+            msg += `${index + 1}. Position ${position.pair} : invested ${position.total}$, profit ${position.profit}$\n`;
+        });
+
+        await ctx.reply(msg);
     }
 
     async setBalance(conversation: MyConversation, ctx: MyContext) {
