@@ -9,6 +9,7 @@ const Currencies = require('../currencies.json')
 class MonobankClient {
     private readonly baseUrl = 'https://api.monobank.ua'
     private cachedRates: {currencyA: string, currencyB: string, rateSell: number, rateBuy: number, rateCross: number}[] = [];
+    private lastCurrencyRefresh = 0;
 
     constructor() {
         const app = express()
@@ -73,25 +74,26 @@ class MonobankClient {
     }
 
     async getCurrencyRate() {
-        try {
+        if (this.lastCurrencyRefresh < Date.now() - 10 * 60 * 1000) {
+            this.lastCurrencyRefresh = Date.now();
             const res = await axios.get(`${this.baseUrl}/bank/currency`)
             res.data.forEach((r: any) => {
                 r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString())?.code
                 r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString())?.code
             })
             this.cachedRates = res.data
-        } catch (e) {
-            console.log(e)
+
+            for (const r of [...this.cachedRates]) {
+                this.cachedRates.push({
+                    currencyA: r.currencyB,
+                    currencyB: r.currencyA,
+                    rateBuy: 1 / r.rateBuy,
+                    rateCross: 1 / r.rateCross,
+                    rateSell: 1 / r.rateSell,
+                })
+            }
         }
-        for (const r of [...this.cachedRates]) {
-            this.cachedRates.push({
-                currencyA: r.currencyB,
-                currencyB: r.currencyA,
-                rateBuy: 1 / r.rateBuy,
-                rateCross: 1 / r.rateCross,
-                rateSell: 1 / r.rateSell,
-            })
-        }
+
         return this.cachedRates;
     }
 

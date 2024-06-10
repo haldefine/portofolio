@@ -211,7 +211,6 @@ class TelegramService {
     async sendStatistic(ctx: MyContext) {
         await ctx.reply(`Current balance: ${(ctx.user.balance/100).toFixed(2)}`)
 
-        const exchangeRates = await MonobankClient.getCurrencyRate();
         const now = Date.now();
         const month = (shift: number) => new Date(new Date().getFullYear(), new Date().getMonth() + shift + 1, 1);
         const timeframes = [
