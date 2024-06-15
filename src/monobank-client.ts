@@ -76,21 +76,25 @@ class MonobankClient {
     async getCurrencyRate() {
         if (this.lastCurrencyRefresh < Date.now() - 10 * 60 * 1000) {
             this.lastCurrencyRefresh = Date.now();
-            const res = await axios.get(`${this.baseUrl}/bank/currency`)
-            res.data.forEach((r: any) => {
-                r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString())?.code
-                r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString())?.code
-            })
-            this.cachedRates = res.data
-
-            for (const r of [...this.cachedRates]) {
-                this.cachedRates.push({
-                    currencyA: r.currencyB,
-                    currencyB: r.currencyA,
-                    rateBuy: 1 / r.rateBuy,
-                    rateCross: 1 / r.rateCross,
-                    rateSell: 1 / r.rateSell,
+            try {
+                const res = await axios.get(`${this.baseUrl}/bank/currency`)
+                res.data.forEach((r: any) => {
+                    r.currencyA = Currencies.find((c:any) => c.number === r.currencyCodeA.toString())?.code
+                    r.currencyB = Currencies.find((c:any) => c.number === r.currencyCodeB.toString())?.code
                 })
+                this.cachedRates = res.data
+
+                for (const r of [...this.cachedRates]) {
+                    this.cachedRates.push({
+                        currencyA: r.currencyB,
+                        currencyB: r.currencyA,
+                        rateBuy: 1 / r.rateBuy,
+                        rateCross: 1 / r.rateCross,
+                        rateSell: 1 / r.rateSell,
+                    })
+                }
+            } catch (e) {
+                console.log(e)
             }
         }
 
