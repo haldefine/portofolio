@@ -258,11 +258,12 @@ class TelegramService {
         payments.forEach(p => {
             if (!summary[p.category]) summary[p.category] = 0;
             summary[p.category] += p.dollarsAmount;
-
-            if (p.dollarsAmount >  0) {
-                income += p.dollarsAmount;
+        })
+        Object.values(summary).forEach(s => {
+            if (s > 0) {
+                income += s;
             } else {
-                expenses += p.dollarsAmount;
+                expenses += s;
             }
         })
 
