@@ -37,7 +37,8 @@ class MonobankClient {
                     category: 'Uncategorized'
                 }
                 const payment = await this.createPayment(paymentObject, userId);
-                await TelegramService.handleNewPayment(payment);
+                const isRecognized = await TelegramService.checkTemplates(payment);
+                if (!isRecognized) await TelegramService.handleNewPayment(payment);
             } catch (e) {
                 console.log(e);
             }
@@ -113,4 +114,4 @@ class MonobankClient {
     }
 }
 
-export default new MonobankClient();
+export default new MonobankClient()

@@ -1,15 +1,9 @@
 import Payment, {IPayment} from "./models/Payment";
-import User, {IUser} from "./models/User";
+import User, {ITemplate, IUser} from "./models/User";
 import {Api, Bot, Context, InlineKeyboard, Keyboard, NextFunction, session} from "grammy";
 import {Menu} from "@grammyjs/menu";
-import {
-    Conversation,
-    ConversationFlavor,
-    conversations,
-    createConversation
-} from "@grammyjs/conversations";
+import {Conversation, ConversationFlavor, conversations, createConversation} from "@grammyjs/conversations";
 import MonobankClient from "./monobank-client";
-import mongoose, {Document} from "mongoose";
 import {nanoid} from "nanoid";
 import BinanceProcessor from "./binance/binance-processor";
 
@@ -40,6 +34,9 @@ class TelegramService {
         this.bot.use(createConversation(this.sendStatistic.bind(this), 'sendStatistic'))
         this.bot.use(createConversation(this.addTransaction.bind(this), 'addTransaction'))
         this.bot.use(createConversation(this.setBalance.bind(this), 'setBalance'))
+        this.bot.use(createConversation(this.deleteTransactions.bind(this), 'deleteTransactions'))
+        this.bot.use(createConversation(this.saveTemplate.bind(this), 'saveTemplate'))
+        this.bot.use(createConversation(this.removeTemplate.bind(this), 'removeTemplate'))
         this.startMenu = new Menu<MyContext>("start-menu")
             .text("Add category", (ctx) => ctx.conversation.enter('addCategory')).row()
             .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
@@ -49,6 +46,9 @@ class TelegramService {
             .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
             .text('Add transaction', (ctx) => ctx.conversation.enter('addTransaction')).row()
             .text('Set balance', (ctx) => ctx.conversation.enter('setBalance')).row()
+            .text('Delete transactions', (ctx) => ctx.conversation.enter('deleteTransactions')).row()
+            .text('Save as template', (ctx) => ctx.conversation.enter('saveTemplate')).row()
+            .text('Remove template', (ctx) => ctx.conversation.enter('removeTemplate')).row()
         this.bot.use(this.startMenu);
         const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
         this.bot.command('start', start);
@@ -84,8 +84,8 @@ class TelegramService {
         await ctx.reply(`Balance set to ${balance}`)
     }
 
-    async handleNewPayment(payment: IPayment&{id?: string}) {
-        const user = await User.findById(payment.user);
+    async handleNewPayment(payment: IPayment) {
+        const user = await User.findOne({id: payment.user});
         if (!user) throw new Error("User does not exist");
         const keyboard = new InlineKeyboard().text('Шо там?', 'proceed_transaction')
         await this.bot.api.sendMessage(user.t_id, 'Новая транза', {reply_markup: keyboard})
@@ -129,8 +129,14 @@ class TelegramService {
     }
 
     async addTransaction(conversation: MyConversation, ctx: MyContext) {
-        await ctx.reply('Write amount (-100 for expense, 100 for income)');
-        const amount = Number((await conversation.wait()).message?.text) * 100;
+        const typeKeyboard = new InlineKeyboard().text('Income').text('Expense')
+        await ctx.reply('Type?', {reply_markup: typeKeyboard});
+        const type = (await conversation.waitForCallbackQuery(new RegExp('Income|Expense'))).callbackQuery?.data;
+        await ctx.reply('Write amount');
+        let amount = Number((await conversation.wait()).message?.text) * 100;
+        if (type === 'Expense') {
+            amount = -amount;
+        }
         await ctx.reply('Write currency');
         const currency = (await conversation.wait()).message?.text?.toUpperCase() as string;
         await ctx.reply('Write description');
@@ -148,7 +154,10 @@ class TelegramService {
         const payment = await conversation.external(() =>
             MonobankClient.createPayment(paymentObject, ctx.user.id)
         )
-        ctx = await this.askCategory(conversation, ctx, payment)
+        const isRecognized = await conversation.external(async () =>
+            await this.checkTemplates(payment)
+        )
+        if (!isRecognized) ctx = await this.askCategory(conversation, ctx, payment)
     }
 
     async dbMiddleware(ctx: MyContext, next: NextFunction) {
@@ -159,7 +168,8 @@ class TelegramService {
                 id: nanoid(),
                 t_id: ctx.from.id,
                 categories: [],
-                balance: 0
+                balance: 0,
+                templates: [],
             }
             user = await User.create(userObject)
         }
@@ -277,6 +287,63 @@ class TelegramService {
         await ctx.deleteMessage();
         await ctx.reply(msg);
     }
+
+    async deleteTransactions(conversation: MyConversation, ctx: MyContext) {
+        const paymentToDelete = await this.choosePayment(conversation, ctx);
+        if (!paymentToDelete) return ctx.reply('Error: cannot find payment');
+
+        await conversation.external(() =>
+            Payment.deleteOne({user: ctx.user.id, id: paymentToDelete.id})
+        )
+        await ctx.reply(`Deleted:\n${paymentToDelete.amount/100} ${paymentToDelete.currency} ${paymentToDelete.description}`);
+        return ctx;
+    }
+
+    async saveTemplate(conversation: MyConversation, ctx: MyContext) {
+        const payment = await this.choosePayment(conversation, ctx);
+        if (!payment) return ctx.reply('Error: cannot find payment');
+        await conversation.external(async () => {
+            const template: ITemplate = {
+                paymentCategory: payment.category,
+                paymentDescription: payment.description,
+            }
+            await User.updateOne({id: ctx.user.id}, {$push: {templates: template}})
+        })
+        await ctx.reply('Template saved');
+    }
+
+    async removeTemplate(conversation: MyConversation, ctx: MyContext) {
+        const keyboard = InlineKeyboard.from(ctx.user.templates.map(t => [InlineKeyboard.text(`${t.paymentDescription} - ${t.paymentCategory}`, t.paymentDescription)]));
+        await ctx.reply('Choose template to remove', {reply_markup: keyboard});
+        ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.templates.map(p => p.paymentDescription).join('|')));
+        await ctx.deleteMessage();
+        if (!ctx) return;
+        await User.updateOne({id: ctx.user.id}, {$pull: {template: {paymentDescription: ctx.callbackQuery?.data}}});
+        await ctx.reply('Template removed');
+    }
+
+    private async choosePayment(conversation: MyConversation, ctx: MyContext) {
+        const lastPayments = await conversation.external(async () => {
+            const payments = await Payment.find({user: ctx.user.id}).sort({timestamp: -1}).limit(10);
+            return payments.map(p => p.toJSON());
+        })
+        const keyboard = InlineKeyboard.from(lastPayments.map(p => [InlineKeyboard.text(`${p.amount/100} ${p.currency} ${p.description}`, p.id)]));
+        await ctx.reply('Choose transaction', {reply_markup: keyboard});
+        ctx = await conversation.waitForCallbackQuery(new RegExp(lastPayments.map(p => p.id).join('|')));
+        await ctx.deleteMessage();
+        if (!ctx) return;
+        return lastPayments.find(p => p.id === ctx.callbackQuery?.data);
+    }
+
+    async checkTemplates(payment: IPayment) {
+        const user = await User.findOne({id: payment.user});
+        if (!user) throw new Error("User does not exist");
+        const template = user.templates.find(t => t.paymentDescription === payment.description);
+        if (!template) return false;
+        await Payment.updateOne({id: payment.id}, {$set: {category: template.paymentCategory}});
+        await this.bot.api.sendMessage(user.t_id, `Transaction category marked automatically:\n${payment.amount/100} ${payment.currency} ${payment.description} - ${template.paymentCategory}`);
+        return true;
+    }
 }
 
-export default new TelegramService();
+export default new TelegramService()

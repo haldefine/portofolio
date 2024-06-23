@@ -2,7 +2,6 @@ import 'dotenv/config'
 import Mongodb from "./mongodb";
 import User from "./models/User";
 import MonobankClient from "./monobank-client";
-import BinanceProcessor from "./binance/binance-processor";
 
 (async () => {
     await Mongodb.start()
@@ -10,22 +9,6 @@ import BinanceProcessor from "./binance/binance-processor";
     await Promise.all(users.map(async user =>
         user.apiKey && MonobankClient.setupWebhook(user.apiKey, user.id)
     ))
-
-
-    // const paymentObject = {
-    //     user: '665a4b3ed06658e6b7c4acd4',
-    //     amount: -1000,
-    //     operationAmount: -1000,
-    //     currency: 'USD',
-    //     account: 'req.body.data.account',
-    //     timestamp: Date.now(),
-    //     description: 'data.description',
-    //     rawData: 'JSON.stringify(data)',
-    //     category: 'Uncategorized'
-    // }
-    // const payment = await Payment.create(paymentObject);
-    // if (!payment) throw new Error('No payment found.');
-    // await TelegramService.handleNewPayment(payment);
 })()
 
 

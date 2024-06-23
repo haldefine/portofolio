@@ -1,4 +1,4 @@
-import mongoose, {Schema} from 'mongoose';
+import mongoose from 'mongoose';
 import {nanoid} from "nanoid";
 
 export interface IPayment {
@@ -28,4 +28,3 @@ export const PaymentSchema = new mongoose.Schema<IPayment>({
 });
 
 export default mongoose.model<IPayment>('Payment', PaymentSchema);
-
