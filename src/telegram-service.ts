@@ -289,27 +289,32 @@ class TelegramService {
     }
 
     async deleteTransactions(conversation: MyConversation, ctx: MyContext) {
-        const paymentToDelete = await this.choosePayment(conversation, ctx);
+        const paymentToDelete = await this.choosePayment(conversation, ctx, {});
         if (!paymentToDelete) return ctx.reply('Error: cannot find payment');
 
-        await conversation.external(() =>
-            Payment.deleteOne({user: ctx.user.id, id: paymentToDelete.id})
-        )
+        await conversation.external(async() => {
+            await Payment.deleteOne({user: ctx.user.id, id: paymentToDelete.id})
+            await User.updateOne({id: ctx.user.id}, {$inc: {balance: -paymentToDelete.dollarsAmount}});
+        })
         await ctx.reply(`Deleted:\n${paymentToDelete.amount/100} ${paymentToDelete.currency} ${paymentToDelete.description}`);
         return ctx;
     }
 
     async saveTemplate(conversation: MyConversation, ctx: MyContext) {
-        const payment = await this.choosePayment(conversation, ctx);
+        const payment = await this.choosePayment(conversation, ctx, {category: {$ne: 'Uncategorized'}});
         if (!payment) return ctx.reply('Error: cannot find payment');
-        await conversation.external(async () => {
-            const template: ITemplate = {
-                paymentCategory: payment.category,
-                paymentDescription: payment.description,
-            }
-            await User.updateOne({id: ctx.user.id}, {$push: {templates: template}})
-        })
-        await ctx.reply('Template saved');
+        if (!ctx.user.templates.find(t => t.paymentDescription === payment.description)) {
+            await conversation.external(async () => {
+                const template: ITemplate = {
+                    paymentCategory: payment.category,
+                    paymentDescription: payment.description,
+                }
+                await User.updateOne({id: ctx.user.id}, {$push: {templates: template}})
+            })
+            await ctx.reply('Template saved');
+        } else {
+            await ctx.reply('Template already exists');
+        }
     }
 
     async removeTemplate(conversation: MyConversation, ctx: MyContext) {
@@ -318,13 +323,13 @@ class TelegramService {
         ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.templates.map(p => p.paymentDescription).join('|')));
         await ctx.deleteMessage();
         if (!ctx) return;
-        await User.updateOne({id: ctx.user.id}, {$pull: {template: {paymentDescription: ctx.callbackQuery?.data}}});
+        await User.updateOne({id: ctx.user.id}, {$pull: {templates: {paymentDescription: ctx.callbackQuery?.data}}});
         await ctx.reply('Template removed');
     }
 
-    private async choosePayment(conversation: MyConversation, ctx: MyContext) {
+    private async choosePayment(conversation: MyConversation, ctx: MyContext, filter: any) {
         const lastPayments = await conversation.external(async () => {
-            const payments = await Payment.find({user: ctx.user.id}).sort({timestamp: -1}).limit(10);
+            const payments = await Payment.find({user: ctx.user.id, ...filter}).sort({timestamp: -1}).limit(10);
             return payments.map(p => p.toJSON());
         })
         const keyboard = InlineKeyboard.from(lastPayments.map(p => [InlineKeyboard.text(`${p.amount/100} ${p.currency} ${p.description}`, p.id)]));
