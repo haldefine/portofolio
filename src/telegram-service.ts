@@ -41,14 +41,14 @@ class TelegramService {
             .text("Add category", (ctx) => ctx.conversation.enter('addCategory')).row()
             .text("Remove category", (ctx) => ctx.conversation.enter('removeCategory')).row()
             .text("Edit category", (ctx) => ctx.conversation.enter('editCategory')).row()
-            .text('Statistic', (ctx) => ctx.conversation.enter('sendStatistic')).row()
-            .text('Binance positions', this.getBinance).row()
-            .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
             .text('Add transaction', (ctx) => ctx.conversation.enter('addTransaction')).row()
-            .text('Set balance', (ctx) => ctx.conversation.enter('setBalance')).row()
             .text('Delete transactions', (ctx) => ctx.conversation.enter('deleteTransactions')).row()
+            .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
             .text('Save as template', (ctx) => ctx.conversation.enter('saveTemplate')).row()
             .text('Remove template', (ctx) => ctx.conversation.enter('removeTemplate')).row()
+            .text('Set balance', (ctx) => ctx.conversation.enter('setBalance')).row()
+            .text('Statistic', (ctx) => ctx.conversation.enter('sendStatistic')).row()
+            .text('Binance positions', this.getBinance).row()
         this.bot.use(this.startMenu);
         const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
         this.bot.command('start', start);
