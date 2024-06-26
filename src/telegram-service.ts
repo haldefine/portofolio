@@ -21,13 +21,6 @@ class TelegramService {
         this.bot.use(conversations());
 
 
-        this.bot.use(createConversation(this.proceedTransaction.bind(this), 'proceedTransaction'))
-        this.bot.callbackQuery('proceed_transaction', async (ctx) => {
-            await ctx.deleteMessage();
-            await ctx.conversation.enter('proceedTransaction')
-        })
-
-
         this.bot.use(createConversation(this.removeCategory))
         this.bot.use(createConversation(this.addCategory))
         this.bot.use(createConversation(this.editCategory))
@@ -43,7 +36,7 @@ class TelegramService {
             .text("Edit category", (ctx) => ctx.conversation.enter('editCategory')).row()
             .text('Add transaction', (ctx) => ctx.conversation.enter('addTransaction')).row()
             .text('Delete transactions', (ctx) => ctx.conversation.enter('deleteTransactions')).row()
-            .text('Unknown transactions', (ctx) => ctx.conversation.enter('proceedTransaction')).row()
+            .text('Unknown transactions', (ctx) => this.proceedTransaction(ctx)).row()
             .text('Save as template', (ctx) => ctx.conversation.enter('saveTemplate')).row()
             .text('Remove template', (ctx) => ctx.conversation.enter('removeTemplate')).row()
             .text('Set balance', (ctx) => ctx.conversation.enter('setBalance')).row()
@@ -53,7 +46,12 @@ class TelegramService {
         const start = (ctx: MyContext) => ctx.reply('Hi', {reply_markup: this.startMenu});
         this.bot.command('start', start);
         this.bot.command('menu', start)
-
+        this.bot.callbackQuery(/^chct:(.*?):(.*?)$/, async ctx => {
+            const [, category, paymentId] = ctx.callbackQuery.data.split(':');
+            const payment = await Payment.findOneAndUpdate({id: paymentId}, {$set: {category: category}}, {new: true});
+            await ctx.deleteMessage();
+            if (payment) await ctx.reply(`${(payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description} => ${payment.category}`);
+        })
 
         this.bot.catch(console.log);
         this.bot.start();
@@ -84,49 +82,32 @@ class TelegramService {
         await ctx.reply(`Balance set to ${balance}`)
     }
 
-    async handleNewPayment(payment: IPayment) {
-        const user = await User.findOne({id: payment.user});
-        if (!user) throw new Error("User does not exist");
-        const keyboard = new InlineKeyboard().text('Шо там?', 'proceed_transaction')
-        await this.bot.api.sendMessage(user.t_id, 'Новая транза', {reply_markup: keyboard})
+    async askCategory(user: IUser, payment: IPayment) {
+        const keyboard = InlineKeyboard.from(user.categories.sort().map((c) => [InlineKeyboard.text(c, `chct:${c}:${payment.id}`)]))
+        await this.bot.api.sendMessage(user.t_id, `Ану шо это?!\n${(payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description}`, {reply_markup: keyboard})
     }
 
-    async proceedTransaction(conversation: MyConversation, ctx: MyContext) {
+    async proceedTransaction(ctx: MyContext) {
         if (ctx.user.categories.length === 0) {
             return ctx.reply('You must create categories first');
         }
-        const payments = await conversation.external(async () => {
-            const payments = await Payment.find({
+        const payments = await Payment.find({
                 user: ctx.user.id, $or: [
                     {category: 'Uncategorized'},
                     {category: {$exists: false}},
                 ]
             });
-            return payments.map(p => {
-                return p.toJSON();
-            })
-            // return JSON.parse(JSON.stringify(payments)) as typeof payments;
-        })
+
         if (!payments.length) {
             await ctx.reply('No new payments');
             return;
         }
         for (const payment of payments) {
-            ctx = await this.askCategory(conversation, ctx, payment)
+            await this.askCategory(ctx.user, payment)
         }
-        await ctx.reply('Done')
+        await ctx.deleteMessage()
     }
 
-    async askCategory(conversation: MyConversation, ctx: MyContext, payment: IPayment) {
-        const keyboard = InlineKeyboard.from(ctx.user.categories.sort().map((c) => [InlineKeyboard.text(c, c)]))
-        await ctx.reply(`Ану шо это?!\n${(payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description}`, {reply_markup: keyboard})
-        ctx = await conversation.waitForCallbackQuery(new RegExp(ctx.user.categories.join('|')));
-        const res = await conversation.external(() =>
-            Payment.updateOne({id: payment.id}, {$set: {category: ctx.callbackQuery?.data}})
-        )
-        await ctx.deleteMessage();
-        return ctx;
-    }
 
     async addTransaction(conversation: MyConversation, ctx: MyContext) {
         const typeKeyboard = new InlineKeyboard().text('Income').text('Expense')
@@ -155,9 +136,9 @@ class TelegramService {
             MonobankClient.createPayment(paymentObject, ctx.user.id)
         )
         const isRecognized = await conversation.external(async () =>
-            await this.checkTemplates(payment)
+            await this.checkTemplates(ctx.user, payment)
         )
-        if (!isRecognized) ctx = await this.askCategory(conversation, ctx, payment)
+        if (!isRecognized) await this.askCategory(ctx.user, payment)
     }
 
     async dbMiddleware(ctx: MyContext, next: NextFunction) {
@@ -340,13 +321,11 @@ class TelegramService {
         return lastPayments.find(p => p.id === ctx.callbackQuery?.data);
     }
 
-    async checkTemplates(payment: IPayment) {
-        const user = await User.findOne({id: payment.user});
-        if (!user) throw new Error("User does not exist");
+    async checkTemplates(user: IUser, payment: IPayment) {
         const template = user.templates.find(t => t.paymentDescription === payment.description);
         if (!template) return false;
         await Payment.updateOne({id: payment.id}, {$set: {category: template.paymentCategory}});
-        await this.bot.api.sendMessage(user.t_id, `Transaction category marked automatically:\n${payment.amount/100} ${payment.currency} ${payment.description} - ${template.paymentCategory}`);
+        await this.bot.api.sendMessage(user.t_id, `Transaction category marked automatically:\n${(payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description} => ${payment.category}`);
         return true;
     }
 }

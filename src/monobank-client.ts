@@ -22,6 +22,8 @@ class MonobankClient {
         app.post('/:userId', async (req: Request, res: Response) => {
             try {
                 const userId = req.params.userId;
+                const user = await User.findOne({id: userId});
+                if (!user) throw new Error("User does not exist");
                 const data = req.body.data.statementItem;
                 const currency = Currencies.find((c:any) => c.number === data.currencyCode.toString())
                 const paymentObject: IPayment = {
@@ -37,8 +39,8 @@ class MonobankClient {
                     category: 'Uncategorized'
                 }
                 const payment = await this.createPayment(paymentObject, userId);
-                const isRecognized = await TelegramService.checkTemplates(payment);
-                if (!isRecognized) await TelegramService.handleNewPayment(payment);
+                const isRecognized = await TelegramService.checkTemplates(user, payment);
+                if (!isRecognized) await TelegramService.askCategory(user, payment);
             } catch (e) {
                 console.log(e);
             }
