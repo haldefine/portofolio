@@ -325,7 +325,7 @@ class TelegramService {
         const template = user.templates.find(t => t.paymentDescription === payment.description);
         if (!template) return false;
         await Payment.updateOne({id: payment.id}, {$set: {category: template.paymentCategory}});
-        await this.bot.api.sendMessage(user.t_id, `Transaction category marked automatically:\n${(payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description} => ${payment.category}`);
+        await this.bot.api.sendMessage(user.t_id, `Transaction category marked automatically:\n${(payment.amount/100).toFixed(2)} ${payment.currency} ${payment.description} => ${template.paymentCategory}`);
         return true;
     }
 }
